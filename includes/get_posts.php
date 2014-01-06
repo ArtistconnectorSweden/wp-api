@@ -1,23 +1,50 @@
 <?php
+/***
+ * Modified by Alecca <alexander.forselius@artistconnector.com>
+ **/
 @include_once('JSON.php');
 @include_once ('DEV.php');
 class get_posts
 {
 	function __construct() 
 	{
+    header('Access-Control-Allow-Origin: *');
 		add_filter('rewrite_rules_array','get_posts::insertRules');
 		add_filter('query_vars','get_posts::insertQueryVars');
 		add_action('parse_query','get_posts::insertParseQuery');	
 	}
-	static function posts_info($dev,$comm,$con,$type,$category)
-	{
-		global $wpdb;
-		if ($category == NULL) {
-			$sql = 'SELECT DISTINCT * FROM '.$wpdb->posts.' AS POSTS WHERE POSTS.post_status="publish"';
-		} else {
-			$sql = 'SELECT DISTINCT * FROM '.$wpdb->posts.' AS POSTS LEFT JOIN '.$wpdb->term_relationships.' AS REL ON POSTS.ID = REL.object_id LEFT JOIN '.$wpdb->term_taxonomy.' AS TT ON TT.term_taxonomy_id = REL.term_taxonomy_id LEFT JOIN '.$wpdb->terms.' AS TERMS ON TERMS.term_id = TT.term_id WHERE POSTS.post_status="publish" AND TERMS.slug = \''.addslashes($category).'\';';
+	static function posts_info($dev,$comm,$con,$type = '')
+	{	
+		$page = 0;
+		$size = 3;
+		
+		if (isset($_GET['p']) && is_numeric($_GET['p'])) {
+			$page = (int)$_GET['p'];
 		}
-		$obj = $wpdb->get_results($sql);
+		if (isset($_GET['size']) && is_numeric($_GET['size'])) {
+			$size = (int)$_GET['size'];
+		}
+		
+		$id = NULL;
+		
+		global $wpdb;
+		$extQuery = 'TRUE';
+		if (isset($_GET['uri'])) {
+			$uri = mysql_real_escape_string($_GET['uri']);
+			$extQuery = '(SELECT count(*) FROM ' . $wpdb->postmeta . ' WHERE post_id = POSTS.ID AND meta_key = "spotify_uri" AND meta_value = "' . $uri . '") > 0';
+		}
+		
+		$typeQuery = 'TRUE';
+		
+		if( isset($_GET['type']) ) {
+			$typeQuery = 'POSTS.post_type = "' . mysql_real_escape_string($type) . '"';
+		}
+		
+		
+		
+		$sql = 'SELECT DISTINCT * FROM '.$wpdb->posts.' AS POSTS WHERE  ' . $extQuery . ' AND ' . $typeQuery . ' AND POSTS.post_status="publish" LIMIT ' . ($page* $size) . ', ' . ($size);
+		// die($sql);
+        $obj = $wpdb->get_results($sql);
 		$count_total = 0;
 		foreach($obj as $num)
 		{
@@ -96,21 +123,22 @@ class get_posts
 		}
 		if($check_err)
 		{
-			if(empty($type))
+		
+			if(false)
 			{
+				
 				foreach($obj as $key => $value)
 				{
 					$cat = get_the_category($value->ID);
 					$tag = get_the_tags($value->ID);
 					$author = get_posts::return_author($value->post_author);
-					$meta = get_posts::return_meta($value->ID);
 					$exp = explode("\n",$value->post_content);
 					if(empty($value->post_excerpt))
 					{
 						if(count($exp) > 1)
 						{
 							$value->post_excerpt = explode(" ",strrev(substr(strip_tags($value->post_content), 0, 175)),2);
-							$value->post_excerpt = strrev($value->post_excerpt[1]).' '.'&hellip; <a href="'.$value->guid.'" class="readmore"> Read more <span class="meta-nav">&rarr;</span></a>';
+							$value->post_excerpt = strrev($value->post_excerpt[1]).' '.'&hellip; <a href="'.$value->guid.'"> Continue reading <span class="meta-nav">&rarr;</span></a>';
 							$order   = array("\r\n", "\n", "\r");
 							$replace = ' ';
 							$value->post_excerpt = str_replace($order, $replace, $value->post_excerpt);
@@ -123,15 +151,10 @@ class get_posts
 							$value->post_excerpt = str_replace($order, $replace, $value->post_excerpt);	
 						}	
 					}
-					else $value->post_excerpt = $value->post_excerpt.' '.'<a href="'.$value->guid.'" class="read-more"> Read more <span class="meta-nav">&rarr;</span></a>';	 
+					else $value->post_excerpt = $value->post_excerpt.' '.'<a href="'.$value->guid.'"> Continue reading <span class="meta-nav">&rarr;</span></a>';	 
 					if($tag == false)
 					{
 						$tag = array();
-					}
-					if(function_exists('get_fields')) {
-						$cfields = get_fields($value->ID);
-					} else {
-						$cfields = array();
 					}
 					if(($comm == null and $con == null) or ($comm == 0 and $con == 0))
 					{
@@ -148,10 +171,9 @@ class get_posts
 						'excerpt' => $value->post_excerpt,
 						'parent' => $value->post_parent,
 						'category' => $cat,
+						'content' => $value->post_content,
 						'tag' => $tag,
-						'custom_fields' => $cfields,
 						'author' => $author,
-						'meta' => $meta,
 						'comment_count' => $value->comment_count,
 						'comment_status' => $value->comment_status
 						);
@@ -167,6 +189,7 @@ class get_posts
 						'title' => $value->post_title,
 						'title_plain' => $value->post_title,
 						'content' => $value->post_content,
+						
 						'date' => $value->post_date,
 						'modified' => $value->post_modified,
 						'excerpt' => $value->post_excerpt,
@@ -174,7 +197,6 @@ class get_posts
 						'category' => $cat,
 						'tag' => $tag,
 						'author' => $author,
-						'meta' => $meta,
 						'comment_count' => $value->comment_count,
 						'comment_status' => $value->comment_status
 						);					
@@ -197,11 +219,11 @@ class get_posts
 						'date' => $value->post_date,
 						'modified' => $value->post_modified,
 						'excerpt' => $value->post_excerpt,
+						'content' => $value->post_content,
 						'parent' => $value->post_parent,
 						'category' => $cat,
 						'tag' => $tag,
 						'author' => $author,
-						'meta' => $meta,
 						'comment_count' => $value->comment_count,
 						'comment_status' => $value->comment_status,
 						'comments' => $com
@@ -230,37 +252,38 @@ class get_posts
 						'category' => $cat,
 						'tag' => $tag,
 						'author' => $author,
-						'meta' => $meta,
 						'comment_count' => $value->comment_count,
 						'comment_status' => $value->comment_status,
 						'comments' => $com
 						);					
 					}
-					$posts[] = $obj[$key];
+         
 				}
 			}
-			else if(!empty($type) and !(int) $type)
+			else if(true)
 			{
+		
+						
 				$check_type = '';
 				$count_total_type = 0;
 				$count_type;
 				foreach($obj as $key => $value)
 				{
-					if($value->post_type == $type)
+					if(true)
 					{
 						$count_total_type++;
 						$check_type = true;
 						$cat = get_the_category($value->ID);
 						$tag = get_the_tags($value->ID);
 						$author = get_posts::return_author($value->post_author);
-						$meta = get_posts::return_meta($value->ID);
 						$exp = explode("\n",$value->post_content);
+						
 						if(empty($value->post_excerpt))
 						{
 							if(count($exp) > 1)
 							{
 								$value->post_excerpt = explode(" ",strrev(substr(strip_tags($value->post_content), 0, 175)),2);
-								$value->post_excerpt = strrev($value->post_excerpt[1]).' '.'&hellip; <a href="'.$value->guid.'" class="read-more"> Read more <span class="meta-nav">&rarr;</span></a>';
+								$value->post_excerpt = strrev($value->post_excerpt[1]).' '.'&hellip; <a href="'.$value->guid.'"> Continue reading <span class="meta-nav">&rarr;</span></a>';
 								$order   = array("\r\n", "\n", "\r");
 								$replace = ' ';
 								$value->post_excerpt = str_replace($order, $replace, $value->post_excerpt);
@@ -273,15 +296,10 @@ class get_posts
 								$value->post_excerpt = str_replace($order, $replace, $value->post_excerpt);	
 							}	
 						}
-						else $value->post_excerpt = $value->post_excerpt.' '.'<a href="'.$value->guid.'" class="read-more"> Read more <span class="meta-nav">&rarr;</span></a>';
+						else $value->post_excerpt = $value->post_excerpt;//.' '.'<a href="'.$value->guid.'"> Continue reading <span class="meta-nav">&rarr;</span></a>';
 						if($tag == false)
 						{
 							$tag = array();
-						}
-						if(function_exists('get_fields')) {
-							$cfields = get_fields($value->ID);
-						} else {
-							$cfields = array();
 						}
 						if(($comm == null and $con == null) or ($comm == 0 and $con == 0))
 						{
@@ -295,17 +313,17 @@ class get_posts
 							'title_plain' => $value->post_title,
 							'date' => $value->post_date,
 							'modified' => $value->post_modified,
+							'content' => $value->post_content,
 							'excerpt' => $value->post_excerpt,
 							'parent' => $value->post_parent,
 							'category' => $cat,
 							'tag' => $tag,
-							'custom_fields' => $cfields,
 							'author' => $author,
-							'meta' => $meta,
 							'comment_count' => $value->comment_count,
 							'comment_status' => $value->comment_status
 							);
 						}
+						
 						if($con == 1 or ($con == 1 and $comm == 0))
 						{
 							$obj[$key] = array(
@@ -324,7 +342,6 @@ class get_posts
 							'category' => $cat,
 							'tag' => $tag,
 							'author' => $author,
-							'meta' => $meta,
 							'comment_count' => $value->comment_count,
 							'comment_status' => $value->comment_status
 							);					
@@ -351,7 +368,6 @@ class get_posts
 							'category' => $cat,
 							'tag' => $tag,
 							'author' => $author,
-							'meta' => $meta,
 							'comment_count' => $value->comment_count,
 							'comment_status' => $value->comment_status,
 							'comments' => $com
@@ -380,13 +396,21 @@ class get_posts
 							'category' => $cat,
 							'tag' => $tag,
 							'author' => $author,
-							'meta' => $meta,
 							'comment_count' => $value->comment_count,
 							'comment_status' => $value->comment_status,
 							'comments' => $com
 							);					
+						} 
+						
+						$obj[$key]['meta'] = array();
+						$meta = get_post_meta($value->ID);
+							
+						if ($meta != NULL)
+						foreach($meta as $k => $v) {
+						 $obj[$key]['meta'][$k] = $v;
 						}
 						$posts[] = $obj[$key];
+
 					}
 					else if($value->post_type != $type and $check_type != true)
 					{
@@ -503,15 +527,6 @@ class get_posts
 			{
 				if($id == $value->ID)
 				{
-                                $avatar = array();
-                                if (get_user_meta($value->ID, 'avatar', true) != '') {
-		                    $sqli = 'SELECT DISTINCT * FROM '.$wpdb->postmeta.' AS PM
-                                     WHERE PM.post_id="'.get_user_meta($value->ID, 'avatar', true).'"';
-		                    $iobj = $wpdb->get_results($sqli);
-		                    foreach ($iobj as $k => $v) {
-                                        $avatar[$v->meta_key] = $v->meta_value;
-                                    }
-                                }
 				$obj[$key] = array(
 				'id' => $value->ID,
 				'slug' => $value->user_nicename,
@@ -521,7 +536,6 @@ class get_posts
 				'nickname' => $value->user_nicename,
 				'url' => $value->user_url,
 				'description' => get_user_meta($value->ID, 'description', true),
-				'avatar' => $avatar,
 				'gravatar' => get_posts::get_gravatar($value->user_email)
 				);
 				$authors[] = $obj[$key];
@@ -530,37 +544,10 @@ class get_posts
 			}
 			
 	}
-	static function return_meta($id)
-	{
-		global $wpdb;
-		$sql = 'SELECT * FROM '.$wpdb->postmeta.' WHERE post_id='.((int)$id).';';
-		$obj = $wpdb->get_results($sql);
-		$meta = array();
-		foreach($obj as $key => $value) {
-			$meta[$value->meta_key] = $value->meta_value;
-		}
-		if (!empty($meta['_thumbnail_id'])) {
-			// Pull thumbnail info if it exists, grab attachment metadata
-			$sql = 'SELECT * FROM '.$wpdb->postmeta.' WHERE post_id='.((int)$meta['_thumbnail_id']).';';
-			$obj = $wpdb->get_results($sql);
-			foreach($obj as $key => $value) {
-				if (substr($value->meta_value, 0, 2) === 'a:') {
-					$meta[$value->meta_key] = unserialize($value->meta_value);
-				} else { 
-					$meta[$value->meta_key] = $value->meta_value;
-				}
-			}
-		}
-		return $meta;			
-	}
-	static function get_id_info($dev,$ID,$comm,$con,$category) 
+	static function get_id_info($dev,$ID,$comm,$con) 
 	{	
 		global $wpdb;
-		if ($category == NULL) {
-			$sql = 'SELECT DISTINCT * FROM '.$wpdb->posts.' AS POSTS WHERE POSTS.post_status="publish"';
-		} else {
-			$sql = 'SELECT DISTINCT * FROM '.$wpdb->posts.' AS POSTS LEFT JOIN '.$wpdb->term_relationships.' AS REL ON POSTS.ID = REL.object_id LEFT JOIN '.$wpdb->term_taxonomy.' AS TT ON TT.term_taxonomy_id = REL.term_taxonomy_id LEFT JOIN '.$wpdb->terms.' AS TERMS ON TERMS.term_id = TT.term_id WHERE POSTS.post_status="publish" AND TERMS.slug = \''.addslashes($category).'\';';
-		}
+		$sql = 'SELECT DISTINCT * FROM '.$wpdb->posts.' AS POSTS WHERE POSTS.post_status="publish"';
 		$obj = $wpdb->get_results($sql);
 		$check_err = true;
 		$err_msg = '';
@@ -641,14 +628,13 @@ class get_posts
 					$cat = get_the_category($value->ID);
 					$tag = get_the_tags($value->ID);
 					$author = get_posts::return_author($value->post_author);
-					$meta = get_posts::return_meta($value->ID);
 					$exp = explode("\n",$value->post_content);
 					if(empty($value->post_excerpt))
 					{
 						if(count($exp) > 1)
 						{
 							$value->post_excerpt = explode(" ",strrev(substr(strip_tags($value->post_content), 0, 175)),2);
-							$value->post_excerpt = strrev($value->post_excerpt[1]).' '.'&hellip; <a href="'.$value->guid.'" class="read-more"> Read more <span class="meta-nav">&rarr;</span></a>';
+						//	$value->post_excerpt = strrev($value->post_excerpt[1]).' '.'&hellip; <a href="'.$value->guid.'"> Continue reading <span class="meta-nav">&rarr;</span></a>';
 							$order   = array("\r\n", "\n", "\r");
 							$replace = ' ';
 							$value->post_excerpt = str_replace($order, $replace, $value->post_excerpt);
@@ -661,15 +647,10 @@ class get_posts
 							$value->post_excerpt = str_replace($order, $replace, $value->post_excerpt);	
 						}	
 					}
-					else $value->post_excerpt = $value->post_excerpt.' '.'<a href="'.$value->guid.'" class="read-more"> Read more <span class="meta-nav">&rarr;</span></a>';
+					else $value->post_excerpt = $value->post_excerpt.' '.'<a href="'.$value->guid.'"> Continue reading <span class="meta-nav">&rarr;</span></a>';
 					if($tag == false)
 					{
 						$tag = array();
-					}
-					if(function_exists('get_fields')) {
-						$cfields = get_fields($value->ID);
-					} else {
-						$cfields = array();
 					}
 					if(($comm == null and $con == null) or ($comm == 0 and $con == 0))
 					{
@@ -687,9 +668,7 @@ class get_posts
 						'parent' => $value->post_parent,
 						'category' => $cat,
 						'tag' => $tag,
-						'custom_fields' => $cfields,
 						'author' => $author,
-						'meta' => $meta,
 						'comment_count' => $value->comment_count,
 						'comment_status' => $value->comment_status
 						);
@@ -716,92 +695,89 @@ class get_posts
 						'category' => $cat,
 						'tag' => $tag,
 						'author' => $author,
-						'meta' => $meta,
 						'comment_count' => $value->comment_count,
 						'comment_status' => $value->comment_status,
 						'comments' => $com
 						);
 					}
-				if($con == 1 or ($con == 1 and $comm == 0))
-				{
-					$obj[$key] = array(
-					'id' => $value->ID,
-					'type' => $value->post_type,
-					'slug' => $value->post_name,
-					'url' => $value->guid,
-					'status' => $value->post_status,
-					'title' => $value->post_title,
-					'title_plain' => $value->post_title,
-					'content' => $value->post_content,
-					'date' => $value->post_date,
-					'modified' => $value->post_modified,
-					'excerpt' => $value->post_excerpt,
-					'parent' => $value->post_parent,
-					'category' => $cat,
-					'tag' => $tag,
-					'author' => $author,
-					'meta' => $meta,
-					'comment_count' => $value->comment_count,
-					'comment_status' => $value->comment_status
-					);					
-				}
-				if($comm == 1 and $con == 1)
-				{
-					$com = get_posts::return_comment($value->ID);
-					if($com == null)
+					if($con == 1 or ($con == 1 and $comm == 0))
 					{
-						$com = array();
+						$obj[$key] = array(
+						'id' => $value->ID,
+						'type' => $value->post_type,
+						'slug' => $value->post_name,
+						'url' => $value->guid,
+						'status' => $value->post_status,
+						'title' => $value->post_title,
+						'title_plain' => $value->post_title,
+						'content' => $value->post_content,
+						'date' => $value->post_date,
+						'modified' => $value->post_modified,
+						'excerpt' => $value->post_excerpt,
+						'parent' => $value->post_parent,
+						'category' => $cat,
+						'tag' => $tag,
+						'author' => $author,
+						'comment_count' => $value->comment_count,
+						'comment_status' => $value->comment_status
+						);					
 					}
-					$obj[$key] = array(
-					'id' => $value->ID,
-					'type' => $value->post_type,
-					'slug' => $value->post_name,
-					'url' => $value->guid,
-					'status' => $value->post_status,
-					'title' => $value->post_title,
-					'title_plain' => $value->post_title,
-					'content' => $value->post_content,
-					'date' => $value->post_date,
-					'modified' => $value->post_modified,
-					'excerpt' => $value->post_excerpt,
-					'parent' => $value->post_parent,
-					'category' => $cat,
-					'tag' => $tag,
-					'author' => $author,
-					'meta' => $meta,
-					'comment_count' => $value->comment_count,
-					'comment_status' => $value->comment_status,
-					'comments' => $com
-					);					
-				}
+					if($comm == 1 and $con == 1)
+					{
+						$com = get_posts::return_comment($value->ID);
+						if($com == null)
+						{
+							$com = array();
+						}
+						$obj[$key] = array(
+						'id' => $value->ID,
+						'type' => $value->post_type,
+						'slug' => $value->post_name,
+						'url' => $value->guid,
+						'status' => $value->post_status,
+						'title' => $value->post_title,
+						'title_plain' => $value->post_title,
+						'content' => $value->post_content,
+						'date' => $value->post_date,
+						'modified' => $value->post_modified,
+						'excerpt' => $value->post_excerpt,
+						'parent' => $value->post_parent,
+						'category' => $cat,
+						'tag' => $tag,
+						'author' => $author,
+						'comment_count' => $value->comment_count,
+						'comment_status' => $value->comment_status,
+						'comments' => $com
+						);					
+					}
 					$posts[] = $obj[$key];
 					$info = array(
 					'status' => $status,
 					'posts' => $posts
 					);
 					$json = new Services_JSON();
-  			 		$encode = $json->encode($info);
-  			 		if($dev == 1)
-  			 		{
-  			 			$dev = new Dev();
-  			 			$output = $dev-> json_format($encode);
-  			 			print($output);
-  			 			$check = true;
-  			 		}
-  			 		if($dev != 1)
-  			 		{
-  			 			print ($encode);
-  			 			$check = true;
-  			 		}
-					}
-					if($check == true)
+					$encode = $json->encode($info);
+					if($dev == 1)
 					{
-						exit();
+						$dev = new Dev();
+						$output = $dev-> json_format($encode);
+						print($output);
+						$check = true;
 					}
-					if($ID !== $value->ID)
+					if($dev != 1)
 					{
-					$check = false;
+						print ($encode);
+						$check = true;
 					}
+				}
+				if($check == true)
+				{
+					exit();
+				}
+				if($ID !== $value->ID)
+				{
+				$check = false;
+				}
 			}
 		}
 			if ($check == false and (int) $ID)
@@ -827,13 +803,9 @@ class get_posts
 			}  
 		
 	}
-	static function get_count_page($dev,$co,$pa,$comm,$con,$type,$category) {
+	static function get_count_page($dev,$co,$pa,$comm,$con,$type) {
 		global $wpdb;
-		if ($category == NULL) {
-			$sql = 'SELECT DISTINCT * FROM '.$wpdb->posts.' AS POSTS WHERE POSTS.post_status="publish"';
-		} else {
-			$sql = 'SELECT DISTINCT * FROM '.$wpdb->posts.' AS POSTS LEFT JOIN '.$wpdb->term_relationships.' AS REL ON POSTS.ID = REL.object_id LEFT JOIN '.$wpdb->term_taxonomy.' AS TT ON TT.term_taxonomy_id = REL.term_taxonomy_id LEFT JOIN '.$wpdb->terms.' AS TERMS ON TERMS.term_id = TT.term_id WHERE POSTS.post_status="publish" AND TERMS.slug = \''.addslashes($category).'\';';
-		}
+		$sql = 'SELECT DISTINCT * FROM '.$wpdb->posts.' AS POSTS WHERE POSTS.post_status="publish"';
 		$obj = $wpdb->get_results($sql);
 		$count_total = 0;
 		foreach($obj as $num)
@@ -985,14 +957,13 @@ class get_posts
 					$cat = get_the_category($value->ID);
 					$tag = get_the_tags($value->ID);
 					$author = get_posts::return_author($value->post_author);
-					$meta = get_posts::return_meta($value->ID);
 					$exp = explode("\n",$value->post_content);
 					if(empty($value->post_excerpt))
 					{
 						if(count($exp) > 1)
 						{
 							$value->post_excerpt = explode(" ",strrev(substr(strip_tags($value->post_content), 0, 175)),2);
-							$value->post_excerpt = strrev($value->post_excerpt[1]).' '.'&hellip; <a href="'.$value->guid.'" class="read-more"> Read more <span class="meta-nav">&rarr;</span></a>';
+							$value->post_excerpt = strrev($value->post_excerpt[1]).' '.'&hellip; <a href="'.$value->guid.'"> Continue reading <span class="meta-nav">&rarr;</span></a>';
 							$order   = array("\r\n", "\n", "\r");
 							$replace = ' ';
 							$value->post_excerpt = str_replace($order, $replace, $value->post_excerpt);
@@ -1005,15 +976,10 @@ class get_posts
 							$value->post_excerpt = str_replace($order, $replace, $value->post_excerpt);	
 						}	
 					}
-					else $value->post_excerpt = $value->post_excerpt.' '.'<a href="'.$value->guid.'" class="read-more"> Read more <span class="meta-nav">&rarr;</span></a>';
+					else $value->post_excerpt = $value->post_excerpt.' '.'<a href="'.$value->guid.'"> Continue reading <span class="meta-nav">&rarr;</span></a>';
 					if($tag == false)
 					{
 						$tag = array();
-					}
-					if(function_exists('get_fields')) {
-						$cfields = get_fields($value->ID);
-					} else {
-						$cfields = array();
 					}
 					if(($comm == null and $con == null) or ($comm == 0 and $con == 0))
 					{
@@ -1031,9 +997,7 @@ class get_posts
 						'parent' => $value->post_parent,
 						'category' => $cat,
 						'tag' => $tag,
-						'custom_fields' => $cfields,
 						'author' => $author,
-						'meta' => $meta,
 						'comment_count' => $value->comment_count,
 						'comment_status' => $value->comment_status
 						);
@@ -1056,7 +1020,6 @@ class get_posts
 						'category' => $cat,
 						'tag' => $tag,
 						'author' => $author,
-						'meta' => $meta,
 						'comment_count' => $value->comment_count,
 						'comment_status' => $value->comment_status
 						);	
@@ -1083,7 +1046,6 @@ class get_posts
 						'category' => $cat,
 						'tag' => $tag,
 						'author' => $author,
-						'meta' => $meta,
 						'comment_count' => $value->comment_count,
 						'comment_status' => $value->comment_status,
 						'comments' => $com
@@ -1112,7 +1074,6 @@ class get_posts
 						'category' => $cat,
 						'tag' => $tag,
 						'author' => $author,
-						'meta' => $meta,
 						'comment_count' => $value->comment_count,
 						'comment_status' => $value->comment_status,
 						'comments' => $com
@@ -1134,14 +1095,13 @@ class get_posts
 						$cat = get_the_category($value->ID);
 						$tag = get_the_tags($value->ID);
 						$author = get_posts::return_author($value->post_author);
-						$meta = get_posts::return_meta($value->ID);
 						$exp = explode("\n",$value->post_content);
 					if(empty($value->post_excerpt))
 					{
 						if(count($exp) > 1)
 						{
 							$value->post_excerpt = explode(" ",strrev(substr(strip_tags($value->post_content), 0, 175)),2);
-							$value->post_excerpt = strrev($value->post_excerpt[1]).' '.'&hellip; <a href="'.$value->guid.'" class="read-more"> Read more <span class="meta-nav">&rarr;</span></a>';
+							$value->post_excerpt = strrev($value->post_excerpt[1]).' '.'&hellip; <a href="'.$value->guid.'"> Continue reading <span class="meta-nav">&rarr;</span></a>';
 							$order   = array("\r\n", "\n", "\r");
 							$replace = ' ';
 							$value->post_excerpt = str_replace($order, $replace, $value->post_excerpt);
@@ -1154,15 +1114,10 @@ class get_posts
 							$value->post_excerpt = str_replace($order, $replace, $value->post_excerpt);	
 						}	
 					}
-					else $value->post_excerpt = $value->post_excerpt.' '.'<a href="'.$value->guid.'" class="read-more"> Read more <span class="meta-nav">&rarr;</span></a>';
+					else $value->post_excerpt = $value->post_excerpt.' '.'<a href="'.$value->guid.'"> Continue reading <span class="meta-nav">&rarr;</span></a>';
 						if($tag == false)
 						{
 							$tag = array();
-						}
-						if(function_exists('get_fields')) {
-							$cfields = get_fields($value->ID);
-						} else {
-							$cfields = array();
 						}
 						if(($comm == null and $con == null) or ($comm == 0 and $con == 0))
 						{
@@ -1180,9 +1135,7 @@ class get_posts
 							'parent' => $value->post_parent,
 							'category' => $cat,
 							'tag' => $tag,
-							'custom_fields' => $cfields,
 							'author' => $author,
-							'meta' => $meta,
 							'comment_count' => $value->comment_count,
 							'comment_status' => $value->comment_status
 							);
@@ -1205,7 +1158,6 @@ class get_posts
 							'category' => $cat,
 							'tag' => $tag,
 							'author' => $author,
-							'meta' => $meta,
 							'comment_count' => $value->comment_count,
 							'comment_status' => $value->comment_status
 							);					
@@ -1407,7 +1359,7 @@ class get_posts
 		if($co > $co_tot)
 		{
 			$co_tot = $co;
-			$page = $co_tot / $co;
+			$page = @($co_tot / $co);
 			return $page;
 		}
 		else 
@@ -1446,7 +1398,6 @@ class get_posts
 			$comm = $_GET['comment'];
 			$con = $_GET['content'];
 			$type = $_GET['type'];
-			$category = $_GET['category'];
 			if(!empty($query->query_vars['id']) and $query->query_vars['id'] == $id)
 			{
 				get_posts::get_id_info($dev,$id,$comm,$con);
@@ -1456,11 +1407,11 @@ class get_posts
 			} 
 			else if(!empty($query->query_vars['count']) and $query->query_vars['count'] == $count and $query->query_vars['page'] == $page)
 			{
-				get_posts::get_count_page($dev,$count,$page,$comm,$con,$type,$category);
+				get_posts::get_count_page($dev,$count,$page,$comm,$con,$type);
 				header('Content-type: text/plain');
 				exit();
 			} 
-			get_posts::posts_info($dev,$comm,$con,$type,$category);
+			get_posts::posts_info($dev,$comm,$con,$type);
 			header('Content-type: text/plain');
 			exit();	
 		}
